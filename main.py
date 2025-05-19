@@ -38,6 +38,8 @@ def run(configs):
     # Set the device
     configs.device = torch.device("cuda" if configs.use_cuda else "cpu")
 
+    print(torch.cuda.get_device_name(0))
+
     # Figure out what's the problem
     problem = load_problem(configs.problem)
 
