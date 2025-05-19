@@ -5,7 +5,7 @@ import pprint as pp
 
 import torch
 import torch.optim as optim
-from tensorboard_logger import Logger as TbLogger
+# from tensorboard_logger import Logger as TbLogger
 
 from agent.critic_network import CriticNetwork
 from configurations import get_configurations
