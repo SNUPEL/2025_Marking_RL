@@ -86,7 +86,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK')
 
-    for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
+    for batch_id, batch in enumerate(training_dataloader):
         print(f"[DEBUG] entered loop, batch_id={batch_id}")
         train_batch(
             model,
@@ -99,6 +99,20 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
             tb_logger,
             configs
         )
+
+    # for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
+    #     print(f"[DEBUG] entered loop, batch_id={batch_id}")
+    #     train_batch(
+    #         model,
+    #         optimizer,
+    #         baseline,
+    #         epoch,
+    #         batch_id,
+    #         step,
+    #         batch,
+    #         tb_logger,
+    #         configs
+    #     )
 
         step += 1
 
