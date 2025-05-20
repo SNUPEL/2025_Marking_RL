@@ -145,28 +145,31 @@ def train_batch(
         tb_logger,
         configs
 ):
+    print('1')
     x, bl_val = baseline.unwrap_batch(batch)
     x = move_to(x, configs.device)
     bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
-
+    print('2')
     # Evaluate model, get costs and log probabilities
     cost, log_likelihood = model(x)
-
+    print('3')
     # Evaluate baseline, get baseline loss if any (only for critic)
     bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
-
+    print('4')
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
     loss = reinforce_loss + bl_loss
-
+    print('5')
     # Perform backward pass and optimization step
     optimizer.zero_grad()
     loss.backward()
+    print('6')
     # Clip gradient norms and get (clipped) gradient norms for logging
     grad_norms = clip_grad_norms(optimizer.param_groups, configs.max_grad_norm)
     optimizer.step()
-
+    print('7')
     # Logging
     if step % int(configs.log_step) == 0:
         log_values(cost, grad_norms, epoch, batch_id, step,
                    log_likelihood, reinforce_loss, bl_loss, tb_logger, configs)
+        print('8')
