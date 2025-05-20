@@ -1,4 +1,4 @@
-import os
+0import os
 import time
 from tqdm import tqdm
 import torch
@@ -75,14 +75,20 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     if not configs.no_vessl:
         vessl.log(payload={"learnrate_pg0": optimizer.param_groups[0]['lr']}, step=step)
 
+    print('1')
+
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
     training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1)
 
+    print('2')
+
     # Put model in train mode!
     model.train()
     set_decode_type(model, "sampling")
+
+    print('3')
 
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
 
@@ -99,6 +105,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
         )
 
         step += 1
+
+    print('4')
 
     epoch_duration = time.time() - start_time
     print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))

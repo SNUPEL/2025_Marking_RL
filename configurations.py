@@ -58,7 +58,6 @@ def get_configurations(args=None):
     configs = parser.parse_args(args)
 
     configs.use_cuda = torch.cuda.is_available() and not configs.no_cuda
-    print(torch.cuda.is_available())
     configs.run_name = "{}_{}".format(configs.run_name, time.strftime("%Y%m%dT%H%M%S"))
     configs.save_dir = os.path.join(
         configs.output_dir,
