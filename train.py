@@ -86,7 +86,32 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK')
 
-    for batch_id, batch in enumerate(training_dataloader):
+    # 1) Dataset 길이 체크
+    print("▶ Dataset length:", len(training_dataloader.dataset))
+
+    # 2) Dataset[0] 직접 가져오기 테스트
+    start = time.time()
+    try:
+        item = training_dataloader.dataset[0]
+        print("▶ Dataset[0] 성공, 값:", item)
+    except Exception as e:
+        print("▶ Dataset[0] 에러:", e)
+    print("   소요 시간:", time.time() - start, "초")
+
+    # 3) DataLoader iterator 직접 테스트
+    it = iter(training_dataloader)
+    print("▶ iterator 생성 완료")
+    start = time.time()
+    try:
+        batch = next(it)
+        print("▶ 첫 배치 로드 성공, batch:", batch)
+    except StopIteration:
+        print("▶ DataLoader가 빈 이터러블입니다!")
+    except Exception as e:
+        print("▶ next(it) 중 에러:", e)
+    print("   소요 시간:", time.time() - start, "초")
+
+    for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
         print(f"[DEBUG] entered loop, batch_id={batch_id}")
         train_batch(
             model,
@@ -99,20 +124,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
             tb_logger,
             configs
         )
-
-    # for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
-    #     print(f"[DEBUG] entered loop, batch_id={batch_id}")
-    #     train_batch(
-    #         model,
-    #         optimizer,
-    #         baseline,
-    #         epoch,
-    #         batch_id,
-    #         step,
-    #         batch,
-    #         tb_logger,
-    #         configs
-    #     )
 
         step += 1
 
