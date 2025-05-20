@@ -3,7 +3,7 @@ import time
 from tqdm import tqdm
 import torch
 import math
-import vessl
+# import vessl
 
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
@@ -72,24 +72,19 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     if not configs.no_tensorboard:
         tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
-    if not configs.no_vessl:
-        vessl.log(payload={"learnrate_pg0": optimizer.param_groups[0]['lr']}, step=step)
+    # if not configs.no_vessl:
+    #     vessl.log(payload={"learnrate_pg0": optimizer.param_groups[0]['lr']}, step=step)
 
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
-    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1)
+    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=0)
 
     # Put model in train mode!
     model.train()
     set_decode_type(model, "sampling")
 
-    print('OK')
-
-    print(type(training_dataloader), training_dataloader)
-
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
-        print(f"[DEBUG] entered loop, batch_id={batch_id}")
         train_batch(
             model,
             optimizer,
@@ -124,8 +119,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     if not configs.no_tensorboard:
         tb_logger.log_value('val_avg_reward', avg_reward, step)
-    if not configs.no_vessl:
-        vessl.log(payload={"val_avg_reward": avg_reward}, step=step)
+    # if not configs.no_vessl:
+    #     vessl.log(payload={"val_avg_reward": avg_reward}, step=step)
 
     baseline.epoch_callback(model, epoch)
 
@@ -144,31 +139,30 @@ def train_batch(
         tb_logger,
         configs
 ):
-    print('1')
+
     x, bl_val = baseline.unwrap_batch(batch)
     x = move_to(x, configs.device)
     bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
-    print('2')
+
     # Evaluate model, get costs and log probabilities
     cost, log_likelihood = model(x)
-    print('3')
+
     # Evaluate baseline, get baseline loss if any (only for critic)
     bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
-    print('4')
+
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
     loss = reinforce_loss + bl_loss
-    print('5')
+
     # Perform backward pass and optimization step
     optimizer.zero_grad()
     loss.backward()
-    print('6')
+
     # Clip gradient norms and get (clipped) gradient norms for logging
     grad_norms = clip_grad_norms(optimizer.param_groups, configs.max_grad_norm)
     optimizer.step()
-    print('7')
+
     # Logging
     if step % int(configs.log_step) == 0:
         log_values(cost, grad_norms, epoch, batch_id, step,
                    log_likelihood, reinforce_loss, bl_loss, tb_logger, configs)
-        print('8')
