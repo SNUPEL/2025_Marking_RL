@@ -80,6 +80,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
     training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=0)
 
+    print('OK?')
+
     # Put model in train mode!
     model.train()
     set_decode_type(model, "sampling")
