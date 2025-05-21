@@ -78,7 +78,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
-    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1)
+    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False)
 
     print('OK?')
 
@@ -87,25 +87,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     set_decode_type(model, "sampling")
 
     print('OK')
-
-    import pickle
-    # 1) Dataset 피클 테스트
-    try:
-        pickle.dumps(training_dataset)
-        print("✅ Dataset은 피클 가능")
-    except Exception as e:
-        print("❌ Dataset 피클 실패:", e)
-
-    # 1) 실제로 DataLoader가 쓰는 collate_fn 꺼내기
-    collate_fn = training_dataloader.collate_fn
-    print("▶ 사용 중인 collate_fn:", collate_fn)
-
-    # 2) 피클 테스트
-    try:
-        pickle.dumps(collate_fn)
-        print("✅ collate_fn은 피클 가능")
-    except Exception as e:
-        print("❌ collate_fn 피클 실패:", e)
 
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
         print(step)
