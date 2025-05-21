@@ -88,6 +88,9 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK')
 
+    import torch.multiprocessing as mp
+    mp.set_start_method('forkserver', force=True)
+
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
         print(step)
         train_batch(
