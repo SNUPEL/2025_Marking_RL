@@ -1,6 +1,7 @@
 import os
 import json
 import vessl
+from vessl.internal.vessl_run import VesslRun
 import pprint as pp
 
 import torch
@@ -17,7 +18,7 @@ from utils import torch_load_cpu, load_problem
 
 def run(configs):
     if not configs.no_vessl:
-        vessl.init(organization="snu-eng-dgx-heavy", project="Marking", hp=configs)
+        VesslRun()
 
     # Pretty print the run args
     pp.pprint(vars(configs))
