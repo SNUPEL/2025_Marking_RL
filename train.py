@@ -12,6 +12,10 @@ from agent.attention_model import set_decode_type
 from utils.log_utils import log_values
 from utils import move_to
 
+import torch.multiprocessing as mp
+
+mp.set_sharing_strategy('file_system')
+mp.set_start_method('forkserver', force=True)
 
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
@@ -74,10 +78,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
         tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
     if not configs.no_vessl:
         vessl.log(payload={"learnrate_pg0": optimizer.param_groups[0]['lr']}, step=step)
-
-    import torch.multiprocessing as mp
-    mp.set_sharing_strategy('file_system')
-    mp.set_start_method('forkserver', force=True)
 
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
