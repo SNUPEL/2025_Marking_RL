@@ -81,10 +81,10 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
 
-    dataset_len = len(training_dataset)
-    batch_size = configs.batch_size
-    num_batches = ceil(dataset_len / batch_size)
-    iterator = range(num_batches)
+    # dataset_len = len(training_dataset)
+    # batch_size = configs.batch_size
+    # num_batches = ceil(dataset_len / batch_size)
+    # iterator = range(num_batches)
 
     print('OK?')
 
@@ -93,7 +93,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK??')
 
-    # training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
+    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
     # Put model in train mode!
     model.train()
@@ -101,32 +101,17 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK')
 
-    for batch_id in iterator:
-        print(step)
-        # 1) 인덱스에 따라 샘플 리스트 생성
-        start = batch_id * batch_size
-        end = min(start + batch_size, dataset_len)
-        samples = [training_dataset[i] for i in range(start, end)]
-        print('OK?')
-        # 2) default_collate로 텐서 배치 생성
-        batch = default_collate(samples)
-        print('OK??')
-        # 3) 실제 학습 함수 호출
-        train_batch(
-            model,
-            optimizer,
-            baseline,
-            epoch,
-            batch_id,
-            step,
-            batch,
-            tb_logger,
-            configs
-        )
-        step += 1
-
-    # for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
+    # for batch_id in iterator:
     #     print(step)
+    #     # 1) 인덱스에 따라 샘플 리스트 생성
+    #     start = batch_id * batch_size
+    #     end = min(start + batch_size, dataset_len)
+    #     samples = [training_dataset[i] for i in range(start, end)]
+    #     print('OK?')
+    #     # 2) default_collate로 텐서 배치 생성
+    #     batch = default_collate(samples)
+    #     print('OK??')
+    #     # 3) 실제 학습 함수 호출
     #     train_batch(
     #         model,
     #         optimizer,
@@ -138,9 +123,24 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     #         tb_logger,
     #         configs
     #     )
-    #
     #     step += 1
-    #     print(step)
+
+    for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
+        print(step)
+        train_batch(
+            model,
+            optimizer,
+            baseline,
+            epoch,
+            batch_id,
+            step,
+            batch,
+            tb_logger,
+            configs
+        )
+
+        step += 1
+        print(step)
 
     epoch_duration = time.time() - start_time
     print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
