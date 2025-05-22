@@ -12,10 +12,8 @@ from agent.attention_model import set_decode_type
 from utils.log_utils import log_values
 from utils import move_to
 
-import torch.multiprocessing as mp
-
-mp.set_sharing_strategy('file_system')
-mp.set_start_method('fork', force=True)
+from math import ceil
+from torch.utils.data._utils.collate import default_collate
 
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
@@ -82,18 +80,28 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
-    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
-    print('OK?')
+    dataset_len = len(training_dataset)
+    batch_size = configs.batch_size
+    num_batches = ceil(dataset_len / batch_size)
+    iterator = range(num_batches)
+
+    # training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
     # Put model in train mode!
     model.train()
     set_decode_type(model, "sampling")
 
-    print('OK')
+    for batch_id in iterator:
+        # 1) 인덱스에 따라 샘플 리스트 생성
+        start = batch_id * batch_size
+        end = min(start + batch_size, dataset_len)
+        samples = [training_dataset[i] for i in range(start, end)]
 
-    for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
-        print(step)
+        # 2) default_collate로 텐서 배치 생성
+        batch = default_collate(samples)
+
+        # 3) 실제 학습 함수 호출
         train_batch(
             model,
             optimizer,
@@ -107,7 +115,23 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
         )
 
         step += 1
-        print(step)
+
+    # for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
+    #     print(step)
+    #     train_batch(
+    #         model,
+    #         optimizer,
+    #         baseline,
+    #         epoch,
+    #         batch_id,
+    #         step,
+    #         batch,
+    #         tb_logger,
+    #         configs
+    #     )
+    #
+    #     step += 1
+    #     print(step)
 
     epoch_duration = time.time() - start_time
     print("Finished epoch {}, took {} s".format(epoch, time.strftime('%H:%M:%S', time.gmtime(epoch_duration))))
