@@ -88,8 +88,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     print('OK?')
 
-    if not configs.no_progress_bar:
-        iterator = tqdm(iterator, total=num_batches)
+    # if not configs.no_progress_bar:
+    #     iterator = tqdm(iterator, total=num_batches)
 
     print('OK??')
 
