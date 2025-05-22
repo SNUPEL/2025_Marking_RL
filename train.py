@@ -12,9 +12,6 @@ from agent.attention_model import set_decode_type
 from utils.log_utils import log_values
 from utils import move_to
 
-from math import ceil
-from torch.utils.data._utils.collate import default_collate
-
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
 
@@ -86,12 +83,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # num_batches = ceil(dataset_len / batch_size)
     # iterator = range(num_batches)
 
-    print('OK?')
-
     # if not configs.no_progress_bar:
     #     iterator = tqdm(iterator, total=num_batches)
-
-    print('OK??')
 
     training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
@@ -99,7 +92,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     model.train()
     set_decode_type(model, "sampling")
 
-    print('OK')
+
 
     # for batch_id in iterator:
     #     print(step)
@@ -107,10 +100,10 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     #     start = batch_id * batch_size
     #     end = min(start + batch_size, dataset_len)
     #     samples = [training_dataset[i] for i in range(start, end)]
-    #     print('OK?')
+    #
     #     # 2) default_collate로 텐서 배치 생성
     #     batch = default_collate(samples)
-    #     print('OK??')
+    #
     #     # 3) 실제 학습 함수 호출
     #     train_batch(
     #         model,
@@ -182,29 +175,29 @@ def train_batch(
         tb_logger,
         configs
 ):
-    print(1)
+
     x, bl_val = baseline.unwrap_batch(batch)
     x = move_to(x, configs.device)
     bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
-    print(2)
+
     # Evaluate model, get costs and log probabilities
     cost, log_likelihood = model(x)
-    print(3)
+
     # Evaluate baseline, get baseline loss if any (only for critic)
     bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
-    print(4)
+
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
     loss = reinforce_loss + bl_loss
-    print(5)
+
     # Perform backward pass and optimization step
     optimizer.zero_grad()
     loss.backward()
-    print(6)
+
     # Clip gradient norms and get (clipped) gradient norms for logging
     grad_norms = clip_grad_norms(optimizer.param_groups, configs.max_grad_norm)
     optimizer.step()
-    print(7)
+
     # Logging
     if step % int(configs.log_step) == 0:
         log_values(cost, grad_norms, epoch, batch_id, step,
