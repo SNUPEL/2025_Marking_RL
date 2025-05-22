@@ -15,7 +15,7 @@ from utils import move_to
 import torch.multiprocessing as mp
 
 mp.set_sharing_strategy('file_system')
-mp.set_start_method('forkserver', force=True)
+mp.set_start_method('fork', force=True)
 
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
