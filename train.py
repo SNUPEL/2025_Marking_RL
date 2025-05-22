@@ -85,6 +85,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     batch_size = configs.batch_size
     num_batches = ceil(dataset_len / batch_size)
     iterator = range(num_batches)
+    if not configs.no_progress_bar:
+        iterator = tqdm(iterator, total=num_batches)
 
     # training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
@@ -93,6 +95,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     set_decode_type(model, "sampling")
 
     for batch_id in iterator:
+        print(step)
         # 1) 인덱스에 따라 샘플 리스트 생성
         start = batch_id * batch_size
         end = min(start + batch_size, dataset_len)
@@ -113,7 +116,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
             tb_logger,
             configs
         )
-
         step += 1
 
     # for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
