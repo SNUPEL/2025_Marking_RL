@@ -75,6 +75,10 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     if not configs.no_vessl:
         vessl.log(payload={"learnrate_pg0": optimizer.param_groups[0]['lr']}, step=step)
 
+    import torch.multiprocessing as mp
+    mp.set_sharing_strategy('file_system')
+    mp.set_start_method('forkserver', force=True)
+
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
@@ -87,9 +91,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     set_decode_type(model, "sampling")
 
     print('OK')
-
-    import torch.multiprocessing as mp
-    mp.set_start_method('forkserver', force=True)
 
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=configs.no_progress_bar)):
         print(step)
