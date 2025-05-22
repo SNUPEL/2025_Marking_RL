@@ -94,6 +94,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     model.train()
     set_decode_type(model, "sampling")
 
+    print('OK')
+
     for batch_id in iterator:
         print(step)
         # 1) 인덱스에 따라 샘플 리스트 생성
