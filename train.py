@@ -85,8 +85,13 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     batch_size = configs.batch_size
     num_batches = ceil(dataset_len / batch_size)
     iterator = range(num_batches)
+
+    print('OK?')
+
     if not configs.no_progress_bar:
         iterator = tqdm(iterator, total=num_batches)
+
+    print('OK??')
 
     # training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
 
