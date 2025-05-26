@@ -58,10 +58,10 @@ def get_configurations(args=None):
     configs = parser.parse_args(args)
 
     configs.use_cuda = torch.cuda.is_available() and not configs.no_cuda
-    configs.run_name = "{}_{}".format(configs.run_name, time.strftime("%Y%m%dT%H%M%S"))
+    configs.run_name = "{}_{}/".format(configs.run_name, time.strftime("%Y%m%dT%H%M%S"))
     configs.save_dir = os.path.join(
         configs.output_dir,
-        "{}_{}".format(configs.problem, configs.graph_size),
+        "{}_{}/".format(configs.problem, configs.graph_size),
         configs.run_name
     )
     if configs.bl_warmup_epochs is None:
