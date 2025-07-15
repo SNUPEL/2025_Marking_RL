@@ -426,20 +426,20 @@ class AttentionModel(nn.Module):
 
     def _get_attention_node_data(self, fixed, state):
         if self.problem.NAME == "nesting":
-            # cur_coord = state.cur_coord
-            # dis = (state.coords[:, 1:, :] - cur_coord).norm(p=2, dim=-1).unsqueeze(-1)
-            # dynamic_info = torch.concat([dis, state.distance_min, state.distance_max], dim=-1)
-            # # Need to provide information of how much each node has already been served
-            # # Clone demands as they are needed by the backprop whereas they are updated later
-            # glimpse_key_step, glimpse_val_step, logit_key_step = \
-            #     self.project_node_step(dynamic_info[:, None, :, :].clone()).chunk(3, dim=-1)
-            #
-            # # Projection of concatenation is equivalent to addition of projections but this is more efficient
-            # return (
-            #     fixed.glimpse_key + self._make_heads(glimpse_key_step),
-            #     fixed.glimpse_val + self._make_heads(glimpse_val_step),
-            #     fixed.logit_key + logit_key_step,
-            # )
+            cur_coord = state.cur_coord
+            dis = (state.coords[:, 1:, :] - cur_coord).norm(p=2, dim=-1).unsqueeze(-1)
+            dynamic_info = torch.concat([dis, state.distance_min, state.distance_max], dim=-1)
+            # Need to provide information of how much each node has already been served
+            # Clone demands as they are needed by the backprop whereas they are updated later
+            glimpse_key_step, glimpse_val_step, logit_key_step = \
+                self.project_node_step(dynamic_info[:, None, :, :].clone()).chunk(3, dim=-1)
+
+            # Projection of concatenation is equivalent to addition of projections but this is more efficient
+            return (
+                fixed.glimpse_key + self._make_heads(glimpse_key_step),
+                fixed.glimpse_val + self._make_heads(glimpse_val_step),
+                fixed.logit_key + logit_key_step,
+            )
 
             return fixed.glimpse_key, fixed.glimpse_val, fixed.logit_key
 

@@ -116,23 +116,23 @@ class StateNESTING(NamedTuple):
 
         cur_coord = self.coords[self.ids, prev_a_paired]
 
-        # distance_mask = self.distance_mask.scatter_(-1, prev_a.unsqueeze(-1).expand(-1, self.distance_mask.size(1), -1), 0)
-        # distance_mask = distance_mask.scatter_(-1, prev_a_paired.unsqueeze(-1).expand(-1, distance_mask.size(1), -1), 0)
-        #
-        # distance_masked = torch.where(distance_mask, self.distance, torch.tensor(float("inf"), device=self.distance.device))
-        # distance_min = torch.min(distance_masked, dim=-1)[0].unsqueeze(-1)
-        # distance_min = torch.where(~torch.isinf(distance_min), distance_min, 0.0)
-        #
-        # distance_masked = torch.where(distance_mask, self.distance,torch.tensor(float("-inf"), device=self.distance.device))
-        # distance_max = torch.max(distance_masked, dim=-1)[0].unsqueeze(-1)
-        # distance_max = torch.where(~torch.isinf(distance_max), distance_max, 0.0)
-        #
-        # return self._replace(prev_a=prev_a, visited_=visited_,
-        #                      lengths=lengths, cur_coord=cur_coord, i=self.i + 1, distance_mask=distance_mask,
-        #                      distance_min=distance_min, distance_max=distance_max)
+        distance_mask = self.distance_mask.scatter_(-1, prev_a.unsqueeze(-1).expand(-1, self.distance_mask.size(1), -1), 0)
+        distance_mask = distance_mask.scatter_(-1, prev_a_paired.unsqueeze(-1).expand(-1, distance_mask.size(1), -1), 0)
+
+        distance_masked = torch.where(distance_mask, self.distance, torch.tensor(float("inf"), device=self.distance.device))
+        distance_min = torch.min(distance_masked, dim=-1)[0].unsqueeze(-1)
+        distance_min = torch.where(~torch.isinf(distance_min), distance_min, 0.0)
+
+        distance_masked = torch.where(distance_mask, self.distance,torch.tensor(float("-inf"), device=self.distance.device))
+        distance_max = torch.max(distance_masked, dim=-1)[0].unsqueeze(-1)
+        distance_max = torch.where(~torch.isinf(distance_max), distance_max, 0.0)
 
         return self._replace(prev_a=prev_a, visited_=visited_,
-                             lengths=lengths, cur_coord=cur_coord, i=self.i + 1)
+                             lengths=lengths, cur_coord=cur_coord, i=self.i + 1, distance_mask=distance_mask,
+                             distance_min=distance_min, distance_max=distance_max)
+
+        # return self._replace(prev_a=prev_a, visited_=visited_,
+        #                      lengths=lengths, cur_coord=cur_coord, i=self.i + 1)
 
     def all_finished(self):
         # Exactly n steps
