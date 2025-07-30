@@ -1,0 +1,1 @@
+--data_path C:\python_project\2025_Marking_RL\data\case3\nesting80_case3_seed1234.pkl --res_dir C:\python_project\2025_Marking_RL\results\ -f --val_size 10000 --eval_batch_size 1 --width 1000 --decode_strategy sample --model C:\python_project\2025_Marking_RL\outputs\nesting_80_rect\epoch-99.pt

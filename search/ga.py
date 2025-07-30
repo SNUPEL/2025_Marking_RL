@@ -513,7 +513,7 @@ if __name__ == '__main__':
     GA_ELITE_SIZE = 4
     GA_TOURNAMENT_K_SELECT = 3
 
-    DATA_DIRECTORY_MAIN = '../data/case1/'
+    DATA_DIRECTORY_MAIN = '../data/case3/'
     RESULTS_OUTPUT_DIR_MAIN = '../results_ga_sa_style_nesting/'
 
     # MODIFICATION: This variable will now be passed to the GA constructor

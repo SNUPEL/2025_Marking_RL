@@ -3,7 +3,6 @@ import time
 import argparse
 import torch
 
-
 def get_configurations(args=None):
     parser = argparse.ArgumentParser(description="Attention based model for solving the Travelling Salesman Problem with Reinforcement Learning")
 

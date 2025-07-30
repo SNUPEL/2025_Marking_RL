@@ -1,6 +1,3 @@
-import vessl
-
-
 def log_values(cost, grad_norms, epoch, batch_id, step,
                log_likelihood, reinforce_loss, bl_loss, tb_logger, opts):
     avg_cost = cost.mean().item()
@@ -27,6 +24,8 @@ def log_values(cost, grad_norms, epoch, batch_id, step,
             tb_logger.log_value('critic_grad_norm_clipped', grad_norms_clipped[1], step)
 
     if not opts.no_vessl:
+        import vessl
+
         vessl.log(payload={"avg_cost": avg_cost}, step=step)
 
         vessl.log(payload={"actor_loss": reinforce_loss.item()}, step=step)
