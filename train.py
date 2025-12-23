@@ -3,8 +3,9 @@ import time
 from tqdm import tqdm
 import torch
 import math
+import csv
 
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader
 from torch.nn import DataParallel
 
 from agent.attention_model import set_decode_type
@@ -33,13 +34,23 @@ def rollout(model, dataset, configs):
 
     def eval_model_bat(bat):
         with torch.no_grad():
-            cost, _ = model(move_to(bat, configs.device))
-        return cost.data.cpu()
+            if isinstance(bat, dict):
+                bat = bat['data'] if 'data' in bat else bat
+
+            if hasattr(bat, 'x'):  # PyG Data
+                bat = bat.to(configs.device)
+                cost, _ = model(bat)
+            else:  # 기존 dict
+                bat = move_to(bat, configs.device)
+                cost, _ = model(bat)
+            return cost.data.cpu()
+
+    pyg_loader = DataLoader(dataset, batch_size=configs.eval_batch_size, follow_batch=['x'], pin_memory=True)
 
     return torch.cat([
         eval_model_bat(bat)
         for bat
-        in tqdm(DataLoader(dataset, batch_size=configs.eval_batch_size), disable=configs.no_progress_bar)
+        in tqdm(pyg_loader, disable=configs.no_progress_bar)
     ], 0)
 
 
@@ -64,6 +75,25 @@ def clip_grad_norms(param_groups, max_norm=math.inf):
 
 
 def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, problem, tb_logger, configs):
+    csv_filename = f'training_log.csv'
+    csv_path = os.path.join(configs.save_dir, csv_filename)
+
+    # 디렉토리 자동 생성 (없으면 만듦!)
+    os.makedirs(configs.save_dir, exist_ok=True)
+
+    # 첫 epoch에서만 헤더 생성
+    if epoch == configs.epoch_start:
+        try:
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'epoch', 'step', 'batch_id', 'avg_cost', 'val_reward',
+                    'lr', 'reinforce_loss', 'grad_norm', 'epoch_time'
+                ])
+            print(f"CSV logging started: {csv_path}")
+        except Exception as e:
+            print(f"CSV header failed: {e}")
+
     print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], configs.run_name))
     step = epoch * (configs.epoch_size // configs.batch_size)
     start_time = time.time()
@@ -77,7 +107,14 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
         size=configs.graph_size, num_samples=configs.epoch_size, case=configs.case))
-    training_dataloader = DataLoader(training_dataset, batch_size=configs.batch_size, num_workers=1, pin_memory=False, persistent_workers=True)
+    training_dataloader = DataLoader(
+        training_dataset,
+        batch_size=configs.batch_size,
+        shuffle=True,
+        follow_batch=['x'],
+        num_workers=1,
+        pin_memory=False
+    )
 
     # Put model in train mode!
     model.train()
@@ -127,6 +164,18 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
 
+    # Epoch 결과 저장
+    try:
+        epoch_time = time.strftime('%H:%M:%S', time.gmtime(time.time() - start_time))
+        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                epoch, step, -1, 0, avg_reward.item(),
+                optimizer.param_groups[0]['lr'], 0, 0, epoch_time
+            ])
+    except Exception as e:
+        print(f"⚠️ CSV append failed: {e}")
+
 
 def train_batch(
         model,
@@ -139,10 +188,13 @@ def train_batch(
         tb_logger,
         configs
 ):
-
-    x, bl_val = baseline.unwrap_batch(batch)
-    x = move_to(x, configs.device)
-    bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
+    if hasattr(batch, 'x'):  # PyG Data
+        x = batch.to(configs.device)
+        bl_val = None  # baseline은 별도 처리
+    else:  # 기존 dict batch
+        x, bl_val = baseline.unwrap_batch(batch)
+        x = move_to(x, configs.device)
+        bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
 
     # Evaluate model, get costs and log probabilities
     cost, log_likelihood = model(x)

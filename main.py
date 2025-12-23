@@ -1,4 +1,5 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 import json
 
 import pprint as pp
@@ -11,7 +12,7 @@ from agent.critic_network import CriticNetwork
 from configurations import get_configurations
 from train import train_epoch, validate, get_inner_model
 from baselines import NoBaseline, ExponentialBaseline, CriticBaseline, RolloutBaseline, WarmupBaseline
-from agent.attention_model import AttentionModel
+from agent.attention_model import GATModel
 from utils import torch_load_cpu, load_problem
 
 
@@ -54,7 +55,7 @@ def run(configs):
         load_data = torch_load_cpu(load_path)
 
     # Initialize model
-    model = AttentionModel(
+    model = GATModel(
         configs.embedding_dim,
         configs.hidden_dim,
         problem,

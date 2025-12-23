@@ -3,6 +3,8 @@ import numpy as np
 from torch import nn
 import math
 
+import torch.nn.functional as F
+from torch_geometric.nn import GATConv
 
 class SkipConnection(nn.Module):
 
@@ -214,3 +216,19 @@ class GraphAttentionEncoder(nn.Module):
             h,  # (batch_size, graph_size, embed_dim)
             h.mean(dim=1),  # average to get embedding of graph, (batch_size, embed_dim)
         )
+
+
+class GATEncoder(nn.Module):
+    def __init__(self, node_dim, embed_dim, n_layers, n_heads):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            GATConv(embed_dim, embed_dim // n_heads, heads=n_heads, dropout=0.1)
+            for _ in range(n_layers)
+        ])
+        self.norms = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(n_layers)])
+
+    def forward(self, x, edge_index):  # batch는 옵션!
+        h = x
+        for gat in self.layers:
+            h = F.elu(gat(h, edge_index))  # GATConv(x, edge_index)
+        return h

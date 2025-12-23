@@ -6,11 +6,13 @@ from torch.utils.checkpoint import checkpoint
 from typing import NamedTuple
 from utils.tensor_functions import compute_in_batches
 
-from agent.graph_encoder import GraphAttentionEncoder
+from agent.graph_encoder import GraphAttentionEncoder, GATEncoder
 from torch.nn import DataParallel
 from utils.beam_search import CachedLookup
 from utils.functions import sample_many
 
+from torch_geometric.data import Data, Batch
+import torch.nn.functional as F
 
 def set_decode_type(model, decode_type):
     if isinstance(model, DataParallel):
@@ -40,7 +42,7 @@ class AttentionModelFixed(NamedTuple):
         )
 
 
-class AttentionModel(nn.Module):
+class GATModel(nn.Module):
 
     def __init__(self,
                  embedding_dim,
@@ -54,7 +56,7 @@ class AttentionModel(nn.Module):
                  n_heads=8,
                  checkpoint_encoder=False,
                  shrink_size=None):
-        super(AttentionModel, self).__init__()
+        super(GATModel, self).__init__()
 
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
@@ -89,13 +91,13 @@ class AttentionModel(nn.Module):
             # self.init_embed_start = nn.Linear(2, embedding_dim)
             self.project_node_step = nn.Linear(3, 3 * embedding_dim, bias=False)
 
-        self.init_embed = nn.Linear(node_dim, embedding_dim)
+        self._init_embed = nn.Linear(node_dim, embedding_dim)
 
-        self.embedder = GraphAttentionEncoder(
-            n_heads=n_heads,
-            embed_dim=embedding_dim,
+        self.embedder = GATEncoder(
+            node_dim=node_dim,  # init_embed 출력 dim
+            embed_dim=self.embedding_dim,
             n_layers=self.n_encode_layers,
-            normalization=normalization
+            n_heads=self.n_heads
         )
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
@@ -111,6 +113,14 @@ class AttentionModel(nn.Module):
         if temp is not None:  # Do not change temperature if not provided
             self.temp = temp
 
+    def _make_input_dict(self, batch, B, N):
+        loc_dummy = batch.x.view(B, N, -1) if not isinstance(batch.x, dict) else batch.x['x'].view(B, N, -1)
+        return {
+            'loc': loc_dummy[:, :, :2],
+            'loc_paired': loc_dummy[:, :, 2:],
+            'start': batch.start_pos.view(B, 2) if hasattr(batch, 'start_pos') else None
+        }
+
     def forward(self, input, return_pi=False):
         """
         :param input: (batch_size, graph_size, node_dim) input node features or dictionary with multiple tensors
@@ -118,22 +128,43 @@ class AttentionModel(nn.Module):
         using DataParallel as the results may be of different lengths on different GPUs
         :return:
         """
-
-        if self.checkpoint_encoder and self.training:  # Only checkpoint if we need gradients
-            embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
+        if isinstance(input, dict):
+            batch = input['data']  # DataBatch 추출
+            print(f"Dict batch -> DataBatch: {type(batch)}")
         else:
-            embeddings, _ = self.embedder(self._init_embed(input))
+            batch = input
 
-        _log_p, pi = self._inner(input, embeddings)
+            # 이제 안전하게 PyG DataBatch 처리
+        assert hasattr(batch, 'x'), "No x attribute"
+        assert isinstance(batch.x, torch.Tensor), "x must be Tensor"
 
-        cost, mask = self.problem.get_costs(input, pi)
-        # Log likelyhood is calculated within the model since returning it per action does not work well with
-        # DataParallel since sequences can be of different lengths
+        x_proj = self._init_embed(batch.x)
+        embeddings_flat = self.embedder(x_proj, batch.edge_index)
+
+        B = batch.num_graphs
+        N = batch.num_nodes // B  # pad 고려
+        # 완전한 input_dict 구성 (TSP/nesting 공통)
+        loc_dummy = batch.x.view(B, N, 4)  # (B, N, 4)
+
+        input_dict = {
+            'loc': loc_dummy[:, :, :2],  # (B, N, 2) x,y
+            'loc_paired': loc_dummy[:, :, 2:],  # (B, N, 2) paired x,y
+        }
+
+        # start_pos 처리 (batch에 있으면 사용, 없으면 dummy)
+        if hasattr(batch, 'start_pos'):
+            input_dict['start'] = batch.start_pos.view(B, -1)
+        else:
+            # TSP 첫 노드나 placeholder
+            input_dict['start'] = loc_dummy[:, 0, :2]  # 첫 노드 사용
+
+        embeddings = embeddings_flat.view(B, N, -1)
+
+        _log_p, pi = self._inner(input_dict, embeddings)
+        cost, mask = self.problem.get_costs(input_dict, pi)
         ll = self._calc_log_likelihood(_log_p, pi, mask)
-        if return_pi:
-            return cost, ll, pi
 
-        return cost, ll
+        return cost, ll if not return_pi else (cost, ll, pi)
 
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
@@ -187,14 +218,6 @@ class AttentionModel(nn.Module):
 
         # Calculate log_likelihood
         return log_p.sum(1)
-
-    def _init_embed(self, input):
-        if self.problem.NAME == 'tsp':
-            return self.init_embed(input)
-        else:
-            input = torch.cat((input['loc'], input['loc_paired']), dim=-1)
-            return self.init_embed(input)
-            # return torch.cat([self.init_embed_start(input['start'])[:, None, :], self.init_embed(input['loc'])],1)
 
     def _inner(self, input, embeddings):
 
@@ -282,7 +305,7 @@ class AttentionModel(nn.Module):
                 selected = probs.multinomial(1).squeeze(1)
 
         else:
-            assert False, "Unknown decode type"
+            assert False, "Unknown decode type {}".format(self.decode_type)
         return selected
 
     def _precompute(self, embeddings, num_steps=1):
@@ -428,18 +451,19 @@ class AttentionModel(nn.Module):
         if self.problem.NAME == "nesting":
             cur_coord = state.cur_coord
             dis = (state.coords[:, 1:, :] - cur_coord).norm(p=2, dim=-1).unsqueeze(-1)
-            dynamic_info = torch.concat([dis, state.distance_min, state.distance_max], dim=-1)
+            # dynamic_info = torch.concat([dis, state.distance_min, state.distance_max], dim=-1)
+            dynamic_info = dis
             # Need to provide information of how much each node has already been served
-            # Clone demands as they are needed by the backprop whereas they are updated later
-            glimpse_key_step, glimpse_val_step, logit_key_step = \
-                self.project_node_step(dynamic_info[:, None, :, :].clone()).chunk(3, dim=-1)
-
-            # Projection of concatenation is equivalent to addition of projections but this is more efficient
-            return (
-                fixed.glimpse_key + self._make_heads(glimpse_key_step),
-                fixed.glimpse_val + self._make_heads(glimpse_val_step),
-                fixed.logit_key + logit_key_step,
-            )
+            # # Clone demands as they are needed by the backprop whereas they are updated later
+            # glimpse_key_step, glimpse_val_step, logit_key_step = \
+            #     self.project_node_step(dynamic_info[:, None, :, :].clone()).chunk(3, dim=-1)
+            #
+            # # Projection of concatenation is equivalent to addition of projections but this is more efficient
+            # return (
+            #     fixed.glimpse_key + self._make_heads(glimpse_key_step),
+            #     fixed.glimpse_val + self._make_heads(glimpse_val_step),
+            #     fixed.logit_key + logit_key_step,
+            # )
 
             return fixed.glimpse_key, fixed.glimpse_val, fixed.logit_key
 

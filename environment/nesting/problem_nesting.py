@@ -9,6 +9,8 @@ from torch.nn.functional import pad
 from environment.nesting.state_nesting import StateNESTING
 from utils.beam_search import beam_search
 
+from torch_geometric.data import Data, Batch
+
 
 class NESTING(object):
     NAME = 'nesting'
@@ -65,8 +67,10 @@ class NESTING(object):
 
 class NESTINGDataset(Dataset):
 
-    def __init__(self, filename=None, size=50, num_samples=1000000, offset=0, case=1):
+    def __init__(self, filename=None, size=50, num_samples=1000000, offset=0, case=1, edge_threshold=0.3):
         super(NESTINGDataset, self).__init__()
+
+        self.edge_threshold = edge_threshold  # GAT용 에지 임계값
 
         self.data_set = []
         if filename is not None:
@@ -206,4 +210,42 @@ class NESTINGDataset(Dataset):
         return self.size
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        # 기존 데이터
+        data_dict = self.data[idx]  # {'loc': (2N,2), 'loc_paired': (2N,2), 'start': (2,)}
+
+        # GAT용 PyG Data 생성
+        return self._to_gat_data(data_dict)
+
+    def _to_gat_data(self, data_dict):
+        loc = data_dict['loc']  # (2N, 2)
+        loc_paired = data_dict['loc_paired']  # (2N, 2)
+        start = data_dict['start']  # (2,)
+
+        N_total = loc.size(0)  # 2 * nesting_size
+
+        # 1. 노드 feature: [loc + loc_paired] concat하거나 평균
+        # 방법1: 좌표만 (간단)
+        # x = loc.float()  # (2N, 2) - 좌표 자체를 feature로
+
+        # 방법2: [loc, loc_paired] concat (4차원)
+        x = torch.cat([loc, loc_paired], dim=-1)  # (2N, 4)
+
+        # 2. 에지: 가까운 노드 연결 (packing 제약!)
+        edge_index = []
+        for i in range(N_total):
+            for j in range(i + 1, N_total):
+                # loc 간 거리 또는 loc_paired 간 거리
+                dist = torch.norm(loc[i] - loc[j]).item()
+                if dist < self.edge_threshold:
+                    edge_index.extend([[i, j], [j, i]])
+
+        edge_index = torch.tensor(edge_index).t().long()
+
+        # 3. PyG Data
+        data = Data(
+            x=x,  # (2N, 2) or (2N, 4)
+            edge_index=edge_index,  # (2, E)
+            start_pos=start.float(),  # (2,)
+            num_nodes=N_total  # 메타데이터
+        )
+        return data

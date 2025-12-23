@@ -27,9 +27,9 @@ class StateNESTING(NamedTuple):
     cur_coord: torch.Tensor
     i: torch.Tensor  # Keeps track of step
 
-    distance_mask: torch.Tensor
-    distance_min: torch.Tensor
-    distance_max: torch.Tensor
+    # distance_mask: torch.Tensor
+    # distance_min: torch.Tensor
+    # distance_max: torch.Tensor
 
     @property
     def visited(self):
@@ -50,7 +50,6 @@ class StateNESTING(NamedTuple):
 
     @staticmethod
     def initialize(input, visited_dtype=torch.uint8):
-
         start = input['start']
         loc = input['loc']
 
@@ -81,9 +80,6 @@ class StateNESTING(NamedTuple):
             lengths=torch.zeros(batch_size, 1, device=loc.device),
             cur_coord=input['start'][:, None, :],
             i=torch.zeros(1, dtype=torch.int64, device=loc.device),  # Vector with length num_steps
-            distance_mask=distance_mask,
-            distance_min = torch.min(distance, dim=-1)[0].unsqueeze(-1),
-            distance_max = torch.max(distance, dim=-1)[0].unsqueeze(-1),
         )
 
     def get_final_cost(self):
@@ -116,23 +112,23 @@ class StateNESTING(NamedTuple):
 
         cur_coord = self.coords[self.ids, prev_a_paired]
 
-        distance_mask = self.distance_mask.scatter_(-1, prev_a.unsqueeze(-1).expand(-1, self.distance_mask.size(1), -1), 0)
-        distance_mask = distance_mask.scatter_(-1, prev_a_paired.unsqueeze(-1).expand(-1, distance_mask.size(1), -1), 0)
-
-        distance_masked = torch.where(distance_mask, self.distance, torch.tensor(float("inf"), device=self.distance.device))
-        distance_min = torch.min(distance_masked, dim=-1)[0].unsqueeze(-1)
-        distance_min = torch.where(~torch.isinf(distance_min), distance_min, 0.0)
-
-        distance_masked = torch.where(distance_mask, self.distance,torch.tensor(float("-inf"), device=self.distance.device))
-        distance_max = torch.max(distance_masked, dim=-1)[0].unsqueeze(-1)
-        distance_max = torch.where(~torch.isinf(distance_max), distance_max, 0.0)
+        # distance_mask = self.distance_mask.scatter_(-1, prev_a.unsqueeze(-1).expand(-1, self.distance_mask.size(1), -1), 0)
+        # distance_mask = distance_mask.scatter_(-1, prev_a_paired.unsqueeze(-1).expand(-1, distance_mask.size(1), -1), 0)
+        #
+        # distance_masked = torch.where(distance_mask, self.distance, torch.tensor(float("inf"), device=self.distance.device))
+        # distance_min = torch.min(distance_masked, dim=-1)[0].unsqueeze(-1)
+        # distance_min = torch.where(~torch.isinf(distance_min), distance_min, 0.0)
+        #
+        # distance_masked = torch.where(distance_mask, self.distance,torch.tensor(float("-inf"), device=self.distance.device))
+        # distance_max = torch.max(distance_masked, dim=-1)[0].unsqueeze(-1)
+        # distance_max = torch.where(~torch.isinf(distance_max), distance_max, 0.0)
+        #
+        # return self._replace(prev_a=prev_a, visited_=visited_,
+        #                      lengths=lengths, cur_coord=cur_coord, i=self.i + 1, distance_mask=distance_mask,
+        #                      distance_min=distance_min, distance_max=distance_max)
 
         return self._replace(prev_a=prev_a, visited_=visited_,
-                             lengths=lengths, cur_coord=cur_coord, i=self.i + 1, distance_mask=distance_mask,
-                             distance_min=distance_min, distance_max=distance_max)
-
-        # return self._replace(prev_a=prev_a, visited_=visited_,
-        #                      lengths=lengths, cur_coord=cur_coord, i=self.i + 1)
+                             lengths=lengths, cur_coord=cur_coord, i=self.i + 1)
 
     def all_finished(self):
         # Exactly n steps
