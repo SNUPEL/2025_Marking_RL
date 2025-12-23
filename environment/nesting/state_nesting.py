@@ -134,6 +134,10 @@ class StateNESTING(NamedTuple):
         # Exactly n steps
         return self.i.item() >= int((self.coords.size(-2) - 1) / 2)
 
+    def get_finished(self):
+        """배치별 완료 여부 반환 (shrink_size용)"""
+        return (self.i >= int((self.coords.size(-2) - 1) / 2)).int()
+
     def get_current_node(self):
         return self.prev_a
 

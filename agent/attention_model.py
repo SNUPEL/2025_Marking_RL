@@ -234,7 +234,6 @@ class GATModel(nn.Module):
         # Perform decoding steps
         i = 0
         while not (self.shrink_size is None and state.all_finished()):
-
             if self.shrink_size is not None:
                 unfinished = torch.nonzero(state.get_finished() == 0)
                 if len(unfinished) == 0:
