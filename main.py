@@ -6,14 +6,14 @@ import pprint as pp
 
 import torch
 import torch.optim as optim
-# from tensorboard_logger import Logger as TbLogger
+from tensorboard_logger import Logger as TbLogger
 
 from agent.critic_network import CriticNetwork
 from configurations import get_configurations
 from train import train_epoch, validate, get_inner_model
-from baselines import NoBaseline, ExponentialBaseline, CriticBaseline, RolloutBaseline, WarmupBaseline
+from baselines import NoBaseline, ExponentialBaseline, CriticBaseline, RolloutBaseline, WarmupBaseline, NNBaseline
 from agent.attention_model import GATModel
-from utils import torch_load_cpu, load_problem
+from utils import torch_load_cpu, load_problem, eval_nn_heuristic_on_val
 
 
 def run(configs):
@@ -63,6 +63,7 @@ def run(configs):
         mask_inner=True,
         mask_logits=True,
         normalization=configs.normalization,
+        n_heads=configs.n_heads,
         tanh_clipping=configs.tanh_clipping,
         checkpoint_encoder=configs.checkpoint_encoder,
         shrink_size=configs.shrink_size
@@ -79,15 +80,15 @@ def run(configs):
     if configs.baseline == 'exponential':
         baseline = ExponentialBaseline(configs.exp_beta)
     elif configs.baseline == 'critic':
-        assert problem.NAME == 'tsp', "Critic only supported for TSP"
+        # assert problem.NAME == 'tsp', "Critic only supported for TSP"
         baseline = CriticBaseline(
             (
                 CriticNetwork(
-                    2,
+                    4,
                     configs.embedding_dim,
                     configs.hidden_dim,
                     configs.n_encode_layers,
-                    configs.normalization
+                    configs.n_heads
                 )
             ).to(configs.device)
         )
@@ -98,9 +99,12 @@ def run(configs):
         baseline = NoBaseline()
 
     if configs.bl_warmup_epochs > 0:
-        baseline = WarmupBaseline(baseline, configs.bl_warmup_epochs, warmup_exp_beta=configs.exp_beta)
+        baseline = WarmupBaseline(baseline, configs.bl_warmup_epochs, model, problem, configs.device)
 
     # Load baseline from data, make sure script is called with same type of baseline
+    # if 'baseline' in load_data and configs.resume:
+    #     baseline.load_state_dict(load_data['baseline'])
+
     if 'baseline' in load_data:
         baseline.load_state_dict(load_data['baseline'])
 
@@ -115,7 +119,7 @@ def run(configs):
     )
 
     # Load optimizer state
-    if 'optimizer' in load_data:
+    if 'optimizer' in load_data and configs.resume:
         optimizer.load_state_dict(load_data['optimizer'])
         for state in optimizer.state.values():
             for k, v in state.items():
@@ -142,6 +146,10 @@ def run(configs):
         print("Resuming after {}".format(epoch_resume))
         configs.epoch_start = epoch_resume + 1
 
+    # val_dataset 이미 생성된 상태라고 가정
+    val_avg_cost_nn = eval_nn_heuristic_on_val(problem, val_dataset, configs.device)
+    print(f'Nearest-neighbor heuristic val_avg_cost_nn: {val_avg_cost_nn.item():.4f}')
+
     if configs.eval_only:
         validate(model, val_dataset, configs)
     else:
@@ -158,6 +166,11 @@ def run(configs):
                 configs
             )
 
+            import gc
+            torch.cuda.empty_cache()
+            gc.collect()
+
 
 if __name__ == "__main__":
+    torch.cuda.empty_cache()
     run(get_configurations())

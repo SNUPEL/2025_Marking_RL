@@ -182,53 +182,20 @@ class MultiHeadAttentionLayer(nn.Sequential):
             Normalization(embed_dim, normalization)
         )
 
-
-class GraphAttentionEncoder(nn.Module):
-    def __init__(
-            self,
-            n_heads,
-            embed_dim,
-            n_layers,
-            node_dim=None,
-            normalization='batch',
-            feed_forward_hidden=512
-    ):
-        super(GraphAttentionEncoder, self).__init__()
-
-        # To map input to embedding space
-        self.init_embed = nn.Linear(node_dim, embed_dim) if node_dim is not None else None
-
-        self.layers = nn.Sequential(*(
-            MultiHeadAttentionLayer(n_heads, embed_dim, feed_forward_hidden, normalization)
-            for _ in range(n_layers)
-        ))
-
-    def forward(self, x, mask=None):
-
-        assert mask is None, "TODO mask not yet supported!"
-
-        # Batch multiply to get initial embeddings of nodes
-        h = self.init_embed(x.view(-1, x.size(-1))).view(*x.size()[:2], -1) if self.init_embed is not None else x
-
-        h = self.layers(h)
-
-        return (
-            h,  # (batch_size, graph_size, embed_dim)
-            h.mean(dim=1),  # average to get embedding of graph, (batch_size, embed_dim)
-        )
-
-
 class GATEncoder(nn.Module):
-    def __init__(self, node_dim, embed_dim, n_layers, n_heads):
+    def __init__(self, node_dim, embed_dim, n_layers, n_heads, dropout=0.1):
         super().__init__()
         self.layers = nn.ModuleList([
-            GATConv(embed_dim, embed_dim // n_heads, heads=n_heads, dropout=0.1)
+            GATConv(embed_dim, embed_dim // n_heads, heads=n_heads, dropout=dropout)
             for _ in range(n_layers)
         ])
         self.norms = nn.ModuleList([nn.LayerNorm(embed_dim) for _ in range(n_layers)])
 
-    def forward(self, x, edge_index):  # batch는 옵션!
+    def forward(self, x, edge_index):
         h = x
-        for gat in self.layers:
-            h = F.elu(gat(h, edge_index))  # GATConv(x, edge_index)
+        for gat, ln in zip(self.layers, self.norms):
+            h_res = h
+            h = gat(h, edge_index)
+            h = F.elu(h)
+            h = ln(h + h_res)  # residual + layer norm
         return h

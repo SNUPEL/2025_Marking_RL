@@ -172,3 +172,34 @@ def sample_many(inner_func, get_cost_func, input, batch_rep=1, iter_rep=1):
     minpis = pis[torch.arange(pis.size(0), out=argmincosts.new()), argmincosts]
 
     return minpis, mincosts
+
+
+def eval_nn_heuristic_on_val(problem, val_dataset, device='cuda'):
+    costs = []
+
+    for i in range(len(val_dataset)):
+        data = val_dataset[i]         # PyG Data
+        data = data.to(device)
+
+        # x: (2N, 4) = [loc, loc_paired]
+        x = data.x                    # (2N, 4)
+        loc = x[:, :2]                # (2N, 2)
+        loc_paired = x[:, 2:]         # (2N, 2)
+        start = data.start_pos        # (2,)
+
+        # batch 차원 붙여 dict로 복원 (B=1)
+        batch_dict = {
+            'loc':       loc.unsqueeze(0),         # (1, 2N, 2)
+            'loc_paired': loc_paired.unsqueeze(0), # (1, 2N, 2)
+            'start':     start.unsqueeze(0),       # (1, 2)
+        }
+
+        # 1) NN heuristic로 pi_nn 만들기 (B=1, M)
+        pi_nn = problem.build_nearest_neighbor_pi(batch_dict)   # (1, M)
+
+        # 2) 이 pi_nn을 그대로 get_costs에 넣어 cost 계산
+        cost = problem.get_costs(batch_dict, pi_nn)[0]     # (1,)
+        costs.append(cost.squeeze(0))
+
+    costs = torch.stack(costs, dim=0)   # (val_size,)
+    return costs.mean()

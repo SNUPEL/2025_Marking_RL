@@ -16,12 +16,69 @@ class NESTING(object):
     NAME = 'nesting'
 
     @staticmethod
+    def build_nearest_neighbor_pi(dataset):
+        loc = dataset['loc']  # (B, G, 2), G = 2*M
+        start = dataset['start']  # (B, 2)
+        batch_size, graph_size, _ = loc.size()
+        device = loc.device
+
+        assert graph_size % 2 == 0
+        M = graph_size // 2
+
+        # -----------------------------
+        # pair 구성 사전 정보
+        # -----------------------------
+        B, G, _ = loc.size()
+        node_ids = torch.arange(G, device=device)
+        pair_id_of_node = node_ids // 2  # (G,)
+
+        # 각 pair 내 반대쪽 node 인덱스 사전 계산 (배치 독립적)
+        opposite_node = torch.zeros(G, dtype=torch.long, device=device)
+        for p in range(M):
+            pickup = 2 * p
+            delivery = 2 * p + 1
+            opposite_node[pickup] = delivery
+            opposite_node[delivery] = pickup
+
+        # -----------------------------
+        # 최근접 이웃 구성 (전체 노드 대상 → 선택 후 반대쪽으로 이동)
+        # -----------------------------
+        visited_pair = torch.zeros(B, M, dtype=torch.bool, device=device)
+        pi_nn = torch.zeros(B, M, dtype=torch.long, device=device)  # 선택한 entry node
+
+        current_pos = start.clone()  # (B, 2)
+
+        for step in range(M):
+            # 현재 위치에서 모든 노드까지 거리 (전체 대상)
+            cur_exp = current_pos[:, None, :].expand(B, G, 2)
+            dist = (loc - cur_exp).pow(2).sum(-1).sqrt()  # (B, G)
+
+            # 이미 방문한 pair의 노드들만 배제
+            visited_for_nodes = visited_pair[:, pair_id_of_node]  # (B, G)
+            dist[visited_for_nodes] = float('inf')
+
+            # ★ 전체 노드 중 가장 가까운 node 선택 (entry node)
+            next_entry_node = dist.argmin(dim=1)  # (B,)
+            pi_nn[:, step] = next_entry_node
+
+            # 해당 pair 방문 표시
+            next_pair = pair_id_of_node[next_entry_node]
+            visited_pair[torch.arange(B), next_pair] = True
+
+            # ★ 변경: 선택한 node의 반대쪽 node 위치로 이동
+            next_exit_node = opposite_node[next_entry_node]  # (B,)
+            current_pos = loc[torch.arange(B), next_exit_node]  # (B, 2)
+
+        return pi_nn
+
+
+    @staticmethod
     def get_costs(dataset, pi):
         batch_size, graph_size, _ = dataset['loc'].size()
         sorted_pi = pi.data.sort(1)[0] // 2
         # Check that sequences are valid, i.e. contain 0 to n -1
         assert (torch.arange(int(graph_size / 2), out=pi.data.new()).view(1, -1).expand(batch_size, int(graph_size / 2))
-                 == sorted_pi).all(), "Invalid sequence"
+                == sorted_pi).all(), "Invalid sequence"
 
         # Gather dataset in order of tour
         pi = pi + 1
@@ -216,30 +273,44 @@ class NESTINGDataset(Dataset):
         # GAT용 PyG Data 생성
         return self._to_gat_data(data_dict)
 
-    def _to_gat_data(self, data_dict):
+    def _to_gat_data(self, data_dict, K_percent=1.0):
         loc = data_dict['loc']  # (2N, 2)
         loc_paired = data_dict['loc_paired']  # (2N, 2)
         start = data_dict['start']  # (2,)
 
         N_total = loc.size(0)  # 2 * nesting_size
 
-        # 1. 노드 feature: [loc + loc_paired] concat하거나 평균
-        # 방법1: 좌표만 (간단)
-        # x = loc.float()  # (2N, 2) - 좌표 자체를 feature로
-
-        # 방법2: [loc, loc_paired] concat (4차원)
+        # [loc, loc_paired] concat (4차원)
         x = torch.cat([loc, loc_paired], dim=-1)  # (2N, 4)
 
-        # 2. 에지: 가까운 노드 연결 (packing 제약!)
+        # 2. 에지
         edge_index = []
-        for i in range(N_total):
-            for j in range(i + 1, N_total):
-                # loc 간 거리 또는 loc_paired 간 거리
-                dist = torch.norm(loc[i] - loc[j]).item()
-                if dist < self.edge_threshold:
-                    edge_index.extend([[i, j], [j, i]])
 
-        edge_index = torch.tensor(edge_index).t().long()
+        with torch.no_grad():
+            diff = loc.unsqueeze(1) - loc.unsqueeze(0)  # (N_total, N_total, 2)
+            dist_mat = torch.norm(diff, dim=-1)  # (N_total, N_total)
+
+        for i in range(N_total):
+            # 자기 자신, 같은 pair는 제외하기 위해 mask
+            mask = torch.ones(N_total, dtype=torch.bool, device=loc.device)
+            mask[i] = False
+            pair_idx = i // 2
+            mask[pair_idx * 2: pair_idx * 2 + 2] = False  # 같은 pair 두 개 다 제외
+
+            valid_indices = torch.nonzero(mask, as_tuple=False).squeeze(-1)  # 후보 j들
+            valid_dists = dist_mat[i, valid_indices]
+
+            # K%만큼의 이웃 개수
+            k = max(1, int(len(valid_indices) * K_percent))
+
+            # 가장 가까운 k개 이웃 선택
+            k_dists, k_idx = torch.topk(valid_dists, k, largest=False)
+            neighbors = valid_indices[k_idx]
+
+            for j in neighbors.tolist():
+                edge_index.append([i, j])
+
+        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
 
         # 3. PyG Data
         data = Data(

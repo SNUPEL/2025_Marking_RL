@@ -7,10 +7,12 @@ import csv
 
 from torch_geometric.loader import DataLoader
 from torch.nn import DataParallel
+import torch.nn.functional as F
 
 from agent.attention_model import set_decode_type
 from utils.log_utils import log_values
 from utils import move_to
+
 
 def get_inner_model(model):
     return model.module if isinstance(model, DataParallel) else model
@@ -45,7 +47,7 @@ def rollout(model, dataset, configs):
                 cost, _ = model(bat)
             return cost.data.cpu()
 
-    pyg_loader = DataLoader(dataset, batch_size=configs.eval_batch_size, follow_batch=['x'], pin_memory=True)
+    pyg_loader = DataLoader(dataset, batch_size=configs.eval_batch_size, follow_batch=['x'], num_workers=0, pin_memory=True)
 
     return torch.cat([
         eval_model_bat(bat)
@@ -112,8 +114,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
         batch_size=configs.batch_size,
         shuffle=True,
         follow_batch=['x'],
-        num_workers=1,
-        pin_memory=False
+        num_workers=0,
+        pin_memory=True
     )
 
     # Put model in train mode!
@@ -197,24 +199,44 @@ def train_batch(
         bl_val = move_to(bl_val, configs.device) if bl_val is not None else None
 
     # Evaluate model, get costs and log probabilities
-    cost, log_likelihood = model(x)
+    cost, log_likelihood, log_p = model(x, return_log_p=True)
 
-    # Evaluate baseline, get baseline loss if any (only for critic)
-    bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
+    bl_val, bl_loss = baseline.eval(x, cost)  # (B,), scalar
 
-    # Calculate loss
-    reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
-    loss = reinforce_loss + bl_loss
+    adv = (cost - bl_val).detach()
+    adv = (adv - adv.mean()) / (adv.std() + 1e-6)
+    adv = adv / 0.5
+    pg_loss = (adv * log_likelihood).mean()
+
+    probs = log_p.exp()
+    entropy_per_step = -(probs * log_p).sum(dim=-1)  # (batch, seq_len)
+    entropy = entropy_per_step.mean()  # scalar
+
+    if epoch < 50:
+        lambda_entropy = 2e-3
+    elif epoch < 100:
+        lambda_entropy = 1e-3
+    else:
+        lambda_entropy = 0.0
+
+    loss = pg_loss - lambda_entropy * entropy
 
     # Perform backward pass and optimization step
     optimizer.zero_grad()
     loss.backward()
+    bl_loss.backward()
 
     # Clip gradient norms and get (clipped) gradient norms for logging
     grad_norms = clip_grad_norms(optimizer.param_groups, configs.max_grad_norm)
     optimizer.step()
 
+    if torch.isnan(cost).any() or torch.isnan(log_likelihood).any():
+        print("NaN detected in cost or log_likelihood")
+
     # Logging
     if step % int(configs.log_step) == 0:
+        # cost_nn, _ = baseline.warmup_baseline.eval(x, cost)
+        # avg_cost_nn = cost_nn.mean().item()
+        avg_cost_nn = 0
         log_values(cost, grad_norms, epoch, batch_id, step,
-                   log_likelihood, reinforce_loss, bl_loss, tb_logger, configs)
+                   log_likelihood, loss, bl_loss, avg_cost_nn, tb_logger, configs)

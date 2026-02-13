@@ -32,12 +32,12 @@ class Baseline(object):
 
 class WarmupBaseline(Baseline):
 
-    def __init__(self, baseline, n_epochs=1, warmup_exp_beta=0.8, ):
+    def __init__(self, baseline, n_epochs, model, problem, device):
         super(Baseline, self).__init__()
 
         self.baseline = baseline
         assert n_epochs > 0, "n_epochs to warmup must be positive"
-        self.warmup_baseline = ExponentialBaseline(warmup_exp_beta)
+        self.warmup_baseline = NNBaseline(model, problem, device)
         self.alpha = 0
         self.n_epochs = n_epochs
 
@@ -59,7 +59,7 @@ class WarmupBaseline(Baseline):
             return self.warmup_baseline.eval(x, c)
         v, l = self.baseline.eval(x, c)
         vw, lw = self.warmup_baseline.eval(x, c)
-        # Return convex combination of baseline and of loss
+
         return self.alpha * v + (1 - self.alpha) * vw, self.alpha * l + (1 - self.alpha) * lw
 
     def epoch_callback(self, model, epoch):
@@ -227,6 +227,76 @@ class RolloutBaseline(Baseline):
         get_inner_model(load_model).load_state_dict(get_inner_model(state_dict['model']).state_dict())
         self._update_model(load_model, state_dict['epoch'], state_dict['dataset'])
 
+class NNBaseline(Baseline):
+    """
+    Baseline that uses a fixed NN heuristic policy's cost as baseline.
+    - model: actor 모델 (GATModel) – 여기서 problem, embedder, set_decode_type 등을 가져다 씀
+    - problem: NESTING / TSP 등 문제 클래스 (build_nearest_neighbor_pi, get_costs 필요)
+    - alpha: critic / exp baseline 등과 convex combination 할 때 가중치는
+             train_batch 쪽에서 섞는 편이 더 유연하므로,
+             이 클래스는 "NN baseline 값만" 돌려주는 역할만 한다고 보는 게 깔끔함.
+    """
+
+    def __init__(self, model, problem, device):
+        super(NNBaseline, self).__init__()
+        self.problem = problem
+        self.device = device
+
+        # actor 구조를 그대로 복사해 둘 수도 있고, 그냥 참조만 할 수도 있음.
+        # 여기서는 "정책은 항상 최신 모델"을 쓰고, NN 경로만 heuristic으로 쓰기 때문에
+        # 굳이 deepcopy는 하지 않고 model 참조만 사용.
+        self.model = model
+
+    def eval(self, x, c):
+        """
+        x : PyG Batch 또는 dict batch (train_batch에서 그대로 넘겨주는 입력)
+        c : 실제 cost (B,) – 여기서는 사용 안 함, 인터페이스 맞추기용
+        return:
+          v : (B,) baseline 값 (NN policy cost)
+          l : 0 (baseline 학습 없음)
+        """
+
+        # PyG Batch만 고려 (지금 구조 기준)
+        if not hasattr(x, 'x'):
+            # dict batch라면, train_batch에서 이미 PyG로 변환한 뒤 넣어주는 게 깔끔
+            raise ValueError("NNBaseline expects a PyG Batch with attribute 'x'.")
+
+        batch = x.to(self.device)
+        B = batch.num_graphs
+        N = batch.num_nodes // B
+
+        # actor 쪽과 동일한 방식으로 input_dict 구성
+        loc_dummy = batch.x.view(B, N, 4)  # (B, N, 4)
+        input_dict = {
+            'loc': loc_dummy[:, :, :2],
+            'loc_paired': loc_dummy[:, :, 2:],
+        }
+        if hasattr(batch, 'start_pos'):
+            input_dict['start'] = batch.start_pos.view(B, -1)
+        else:
+            input_dict['start'] = loc_dummy[:, 0, :2]
+
+        with torch.no_grad():
+            # 1) NN policy 시퀀스 생성
+            pi_nn = self.problem.build_nearest_neighbor_pi(input_dict)  # (B, T)
+
+            # 2) 그 시퀀스의 cost 계산
+            cost_nn = self.problem.get_costs(input_dict, pi_nn)[0]     # (B,)
+
+        # Detach: actor 쪽으로 gradient 안 흘리기
+        return cost_nn.detach(), 0.0
+
+    def get_learnable_parameters(self):
+        # NN baseline은 학습하지 않음 (pure heuristic)
+        return []
+
+    def state_dict(self):
+        # heuristic baseline이므로 굳이 저장할 건 없음
+        return {}
+
+    def load_state_dict(self, state_dict):
+        # 로딩할 파라미터 없음
+        pass
 
 class BaselineDataset(Dataset):
 
@@ -245,3 +315,5 @@ class BaselineDataset(Dataset):
 
     def __len__(self):
         return len(self.dataset)
+
+

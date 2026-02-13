@@ -1,0 +1,3 @@
+epoch,step,batch_id,avg_cost,val_reward,lr,reinforce_loss,grad_norm,epoch_time
+0,100,-1,0,42.01295471191406,0.0003,0,0,00:20:47
+1,200,-1,0,42.03514862060547,0.0003,0,0,00:57:41

@@ -6,7 +6,7 @@ from torch.utils.checkpoint import checkpoint
 from typing import NamedTuple
 from utils.tensor_functions import compute_in_batches
 
-from agent.graph_encoder import GraphAttentionEncoder, GATEncoder
+from agent.graph_encoder import GATEncoder, GATEncoder
 from torch.nn import DataParallel
 from utils.beam_search import CachedLookup
 from utils.functions import sample_many
@@ -55,7 +55,10 @@ class GATModel(nn.Module):
                  normalization='batch',
                  n_heads=8,
                  checkpoint_encoder=False,
-                 shrink_size=None):
+                 shrink_size=None,
+                 enc_dropout=0.1,
+                 dec_dropout=0.0,
+                 ):
         super(GATModel, self).__init__()
 
         self.embedding_dim = embedding_dim
@@ -74,6 +77,11 @@ class GATModel(nn.Module):
         self.n_heads = n_heads
         self.checkpoint_encoder = checkpoint_encoder
         self.shrink_size = shrink_size
+
+        self.enc_dropout = enc_dropout
+        self.dec_dropout = dec_dropout
+
+        self.dropout = nn.Dropout(self.dec_dropout)
 
         # Problem specific context parameters (placeholder and step context dimension)
         if self.problem.NAME == "tsp":
@@ -97,7 +105,8 @@ class GATModel(nn.Module):
             node_dim=node_dim,  # init_embed 출력 dim
             embed_dim=self.embedding_dim,
             n_layers=self.n_encode_layers,
-            n_heads=self.n_heads
+            n_heads=self.n_heads,
+            dropout=self.enc_dropout
         )
 
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
@@ -107,6 +116,15 @@ class GATModel(nn.Module):
         assert embedding_dim % n_heads == 0
         # Note n_heads * val_dim == embedding_dim so input to project_out is embedding_dim
         self.project_out = nn.Linear(embedding_dim, embedding_dim, bias=False)
+
+        self._init_parameters()
+
+    def _init_parameters(self):
+        for m in [self.project_node_embeddings,
+                  self.project_fixed_context,
+                  self.project_step_context,
+                  self.project_out]:
+            nn.init.xavier_uniform_(m.weight)
 
     def set_decode_type(self, decode_type, temp=None):
         self.decode_type = decode_type
@@ -121,11 +139,12 @@ class GATModel(nn.Module):
             'start': batch.start_pos.view(B, 2) if hasattr(batch, 'start_pos') else None
         }
 
-    def forward(self, input, return_pi=False):
+    def forward(self, input, return_log_p=False, return_pi=False):
         """
         :param input: (batch_size, graph_size, node_dim) input node features or dictionary with multiple tensors
         :param return_pi: whether to return the output sequences, this is optional as it is not compatible with
         using DataParallel as the results may be of different lengths on different GPUs
+        :param return_log_p: whether to return log_p
         :return:
         """
         if isinstance(input, dict):
@@ -160,17 +179,25 @@ class GATModel(nn.Module):
 
         embeddings = embeddings_flat.view(B, N, -1)
 
+        # emb = embeddings  # (N, D)
+        # print("emb_std:", emb.std(dim=0).mean().item())
+
         _log_p, pi = self._inner(input_dict, embeddings)
+
         cost, mask = self.problem.get_costs(input_dict, pi)
         ll = self._calc_log_likelihood(_log_p, pi, mask)
 
+        if return_log_p:
+            if return_pi:
+                return cost, ll, _log_p, pi
+            return cost, ll, _log_p
         return cost, ll if not return_pi else (cost, ll, pi)
 
     def beam_search(self, *args, **kwargs):
         return self.problem.beam_search(*args, **kwargs, model=self)
 
     def precompute_fixed(self, input):
-        embeddings, _ = self.embedder(self._init_embed(input))
+        embeddings, _ = self.embedder(self._iniit_embed(input))
         # Use a CachedLookup such that if we repeatedly index this object with the same index we only need to do
         # the lookup once... this is the case if all elements in the batch have maximum batch size
         return CachedLookup(self._precompute(embeddings))
@@ -210,14 +237,10 @@ class GATModel(nn.Module):
         # Get log_p corresponding to selected actions
         log_p = _log_p.gather(2, a.unsqueeze(-1)).squeeze(-1)
 
-        # Optional: mask out actions irrelevant to objective so they do not get reinforced
-        if mask is not None:
-            log_p[mask] = 0
-
-        assert (log_p > -1000).data.all(), "Logprobs should not be -inf, check sampling procedure!"
+        log_p = log_p.clamp(min=-20.0)
 
         # Calculate log_likelihood
-        return log_p.sum(1)
+        return log_p.mean(1)
 
     def _inner(self, input, embeddings):
 
@@ -247,6 +270,10 @@ class GATModel(nn.Module):
                     fixed = fixed[unfinished]
 
             log_p, mask = self._get_log_p(fixed, state)
+
+            # print(f"log_p range: {log_p.min():.2f}, {log_p.max():.2f}")
+            # print(f"mask sum: {mask.sum()}")
+            # print(f"valid actions/step: {mask.sum(1).float().mean()}")
 
             # Select the indices of the next nodes in the sequences, result (batch_size) long
             selected = self._select_node(log_p.exp()[:, 0, :], mask[:, 0, :])  # Squeeze out steps dimension
@@ -295,6 +322,9 @@ class GATModel(nn.Module):
                 -1)).data.any(), "Decode greedy: infeasible action has maximum probability"
 
         elif self.decode_type == "sampling":
+            assert not torch.isnan(probs).any()
+            assert (probs >= 0).all()
+            assert (probs.sum(-1) > 0).all()
             selected = probs.multinomial(1).squeeze(1)
 
             # Check if sampling went OK, can go wrong due to bug on GPU
@@ -308,7 +338,7 @@ class GATModel(nn.Module):
         return selected
 
     def _precompute(self, embeddings, num_steps=1):
-
+        assert not torch.isnan(embeddings).any(), "Embeddings NaN!"
         # The fixed context projection of the graph embedding is calculated only once for efficiency
         graph_embed = embeddings.mean(1)
         # fixed context = (batch_size, 1, embed_dim) to make broadcastable with parallel timesteps
@@ -353,9 +383,6 @@ class GATModel(nn.Module):
 
         # Compute logits (unnormalized log_p)
         log_p, glimpse = self._one_to_many_logits(query, glimpse_K, glimpse_V, logit_K, mask)
-
-        if normalize:
-            log_p = torch.log_softmax(log_p / self.temp, dim=-1)
 
         assert not torch.isnan(log_p).any()
 
@@ -431,6 +458,8 @@ class GATModel(nn.Module):
         glimpse = self.project_out(
             heads.permute(1, 2, 3, 0, 4).contiguous().view(-1, num_steps, 1, self.n_heads * val_size))
 
+        glimpse = self.dropout(glimpse)
+
         # Now projecting the glimpse is not needed since this can be absorbed into project_out
         # final_Q = self.project_glimpse(glimpse)
         final_Q = glimpse
@@ -442,9 +471,11 @@ class GATModel(nn.Module):
         if self.tanh_clipping > 0:
             logits = torch.tanh(logits) * self.tanh_clipping
         if self.mask_logits:
-            logits[mask] = -math.inf
+            logits[mask] = -1e4
 
-        return logits, glimpse.squeeze(-2)
+        log_p = torch.log_softmax(logits / self.temp, dim=-1)
+
+        return log_p, glimpse.squeeze(-2)
 
     def _get_attention_node_data(self, fixed, state):
         if self.problem.NAME == "nesting":

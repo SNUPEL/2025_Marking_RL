@@ -22,6 +22,7 @@ def get_configurations(args=None):
     parser.add_argument('--n_encode_layers', type=int, default=3, help='Number of layers in the encoder/critic network')
     parser.add_argument('--tanh_clipping', type=float, default=10., help='Clip the parameters to within +- this value using tanh, set to 0 to not perform any clipping.')
     parser.add_argument('--normalization', default='batch', help="Normalization type, 'batch' (default) or 'instance'")
+    parser.add_argument('--n_heads', type=int, default=8, help='Number of heads')
 
     # Training
     parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
@@ -40,6 +41,13 @@ def get_configurations(args=None):
     parser.add_argument('--checkpoint_encoder', action='store_true', help='Set to decrease memory usage by checkpointing encoder')
     parser.add_argument('--shrink_size', type=int, default=None, help='Shrink the batch size if at least this many instances in the batch are finished to save memory (default None means no shrinking)')
     parser.add_argument('--data_distribution', type=str, default=None, help='Data distribution to use during training, defaults and options depend on problem.')
+
+    # PPO
+    # PPO
+    parser.add_argument('--ppo_epochs', type=int, default=4, help='Number of PPO update epochs per data collection')
+    parser.add_argument('--ppo_clip', type=float, default=0.2, help='PPO clipping epsilon')
+    parser.add_argument('--vf_coef', type=float, default=0.5, help='Value function loss coefficient')
+    parser.add_argument('--ent_coef', type=float, default=0.01, help='Entropy bonus coefficient')
 
     # Misc
     parser.add_argument('--log_step', type=int, default=50, help='Log info every log_step steps')
