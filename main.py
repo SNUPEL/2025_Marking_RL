@@ -172,5 +172,6 @@ def run(configs):
 
 
 if __name__ == "__main__":
+    print(f'__file__ : {__file__}')
     torch.cuda.empty_cache()
     run(get_configurations())
