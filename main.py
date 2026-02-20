@@ -49,9 +49,8 @@ def run(configs):
     # Load data from load_path
     load_data = {}
     assert configs.load_path is None or configs.resume is None, "Only one of load path and resume can be given"
-    # load_path = configs.load_path if configs.load_path is not None else configs.resume
-    load_path = __file__ + configs.load_path
-    print(load_path)
+    load_path = configs.load_path if configs.load_path is not None else configs.resume
+
     if load_path is not None:
         print('  [*] Loading data from {}'.format(load_path))
         load_data = torch_load_cpu(load_path)
