@@ -71,12 +71,21 @@ def run_single_size(configs, graph_size_idx, graph_size, model, baseline, optimi
     problem = load_problem(configs.problem)
     configs.graph_size = graph_size
 
-    # 스테이지별 초기 LR 설정
-    stage_lr = configs.lr_per_stage[graph_size_idx] if configs.lr_per_stage else configs.lr_model
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = stage_lr
+    stage_actor_lr = configs.actor_lr_per_stage[graph_size_idx] if configs.actor_lr_per_stage else configs.lr_model
+    stage_critic_lr = configs.critic_lr_per_stage[graph_size_idx] if configs.critic_lr_per_stage else configs.lr_critic
 
-    print(f"Stage {graph_size_idx + 1}/N={graph_size}: LR={stage_lr:.2e}, decay={configs.lr_decay}")
+    # optimizer param_groups에 개별 적용
+    optimizer.param_groups[0]['lr'] = stage_actor_lr  # model (actor)
+    if len(optimizer.param_groups) > 1:
+        optimizer.param_groups[1]['lr'] = stage_critic_lr  # baseline (critic)
+
+    # lr_scheduler 리셋
+    lr_scheduler.base_lrs = [stage_actor_lr, stage_critic_lr][:len(optimizer.param_groups)]
+    lr_scheduler.step(0)
+
+    print(f"Stage {graph_size_idx + 1:2d}/N={graph_size:2d}: "
+          f"Actor={stage_actor_lr:.2e} "
+          f"Critic={stage_critic_lr:.2e} ")
 
     val_dataset = problem.make_dataset(
         size=configs.graph_size,

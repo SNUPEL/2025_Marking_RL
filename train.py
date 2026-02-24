@@ -212,9 +212,9 @@ def train_batch(
     entropy_per_step = -(probs * log_p).sum(dim=-1)  # (batch, seq_len)
     entropy = entropy_per_step.mean()  # scalar
 
-    if epoch < 50:
+    if epoch < 10:
         lambda_entropy = 2e-3
-    elif epoch < 100:
+    elif epoch < 25:
         lambda_entropy = 1e-3
     else:
         lambda_entropy = 0.0

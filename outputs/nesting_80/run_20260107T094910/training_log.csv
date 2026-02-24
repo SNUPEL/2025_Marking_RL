@@ -1,1 +1,0 @@
-epoch,step,batch_id,avg_cost,val_reward,lr,reinforce_loss,grad_norm,epoch_time

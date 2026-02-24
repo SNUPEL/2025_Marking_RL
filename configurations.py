@@ -44,7 +44,8 @@ def get_configurations(args=None):
 
     # Curriculum Learning
     parser.add_argument('--curriculum_sizes', nargs='+', type=int, default=[10, 20, 40, 80], help='Curriculum learning graph sizes (e.g. 20 40 80)')
-    parser.add_argument('--lr_per_stage', nargs='+', type=float, default=[1e-4, 5e-5, 1e-5],help='Initial LR for each curriculum stage (e.g. 1e-4 5e-5 1e-5)')
+    parser.add_argument('--actor_lr_per_stage', nargs='+', type=float, default=[5e-4, 1e-4, 5e-5, 1e-5], help='Actor LR for each curriculum stage (e.g. 1e-4 5e-5 1e-5)')
+    parser.add_argument('--critic_lr_per_stage', nargs='+', type=float, default=[5e-5, 1e-5, 5e-6, 1e-6], help='Critic LR for each curriculum stage (e.g. 1e-4 5e-5 1e-5)')
     parser.add_argument('--n_epochs_per_stage', type=int, default=100, help='Number of epochs per curriculum stage')
     parser.add_argument('--use_curriculum', action='store_true', help='Enable curriculum learning')
 
