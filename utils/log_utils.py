@@ -36,7 +36,7 @@ def log_values(cost, grad_norms, epoch, batch_id, step,
         vessl.log(payload={"grad_norm": grad_norms[0]}, step=step)
         vessl.log(payload={"grad_norm_clipped": grad_norms_clipped[0]}, step=step)
 
-        tb_logger.log_value('avg_cost_nn', avg_cost_nn, step)
+        vessl.log(payload={'avg_cost_nn': avg_cost_nn}, step=step)
 
         if opts.baseline == 'critic':
             vessl.log(payload={"critic_loss": bl_loss.item()}, step=step)
