@@ -173,6 +173,11 @@ def run(configs):
 
 
 if __name__ == "__main__":
+    import os
 
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:64,expandable_segments:True'
+    os.environ['TORCH_USE_CUDA_DSA'] = '1'  # 새 allocator
+    torch.backends.cuda.enable_mem_efficient_sdp(False)  # FlashAttention off
+    
     torch.cuda.empty_cache()
     run(get_configurations())
