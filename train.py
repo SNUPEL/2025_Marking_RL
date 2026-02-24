@@ -201,6 +201,10 @@ def train_batch(
     # Evaluate model, get costs and log probabilities
     cost, log_likelihood, log_p = model(x, return_log_p=True)
 
+    print(f"Batch nodes: {x.size(0)}, edge max: {batch.edge_index.max() if 'batch' in locals() else 'N/A'}")
+    if hasattr(x, 'validate'):  # x가 Data/Batch
+        x.validate(raise_on_error=True)
+
     bl_val, bl_loss = baseline.eval(x, cost)  # (B,), scalar
 
     adv = (cost - bl_val).detach()
