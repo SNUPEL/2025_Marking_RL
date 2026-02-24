@@ -42,7 +42,12 @@ def get_configurations(args=None):
     parser.add_argument('--shrink_size', type=int, default=None, help='Shrink the batch size if at least this many instances in the batch are finished to save memory (default None means no shrinking)')
     parser.add_argument('--data_distribution', type=str, default=None, help='Data distribution to use during training, defaults and options depend on problem.')
 
-    # PPO
+    # Curriculum Learning
+    parser.add_argument('--curriculum_sizes', nargs='+', type=int, default=[10, 20, 40, 80], help='Curriculum learning graph sizes (e.g. 20 40 80)')
+    parser.add_argument('--lr_per_stage', nargs='+', type=float, default=[1e-4, 5e-5, 1e-5],help='Initial LR for each curriculum stage (e.g. 1e-4 5e-5 1e-5)')
+    parser.add_argument('--n_epochs_per_stage', type=int, default=100, help='Number of epochs per curriculum stage')
+    parser.add_argument('--use_curriculum', action='store_true', help='Enable curriculum learning')
+
     # PPO
     parser.add_argument('--ppo_epochs', type=int, default=4, help='Number of PPO update epochs per data collection')
     parser.add_argument('--ppo_clip', type=float, default=0.2, help='PPO clipping epsilon')
